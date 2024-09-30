@@ -1,29 +1,44 @@
-import { ethers } from 'ethers'
+import { ethers } from 'ethers';
 
 /**
- * Deploy the given contract
- * @param {string} contractName name of the contract to deploy
- * @param {Array<any>} args list of constructor' parameters
- * @param {Number} accountIndex account index from the exposed account
- * @return {Contract} deployed contract
+ * Fetches the contract metadata.
+ * @param contractName - The name of the contract.
+ * @returns The contract metadata.
  */
-export const deploy = async (contractName: string, args: Array<any>, accountIndex?: number): Promise<ethers.Contract> => {
+const getContractMetadata = async (contractName: string) => {
+  const artifactsPath = `contracts/artifacts/${contractName}.json`; // Adjust this path as needed
+  const fileContent = await remix.call('fileManager', 'getFile', artifactsPath);
+  return JSON.parse(fileContent);
+};
 
-  console.log(`deploying ${contractName}`)
-  // Note that the script needs the ABI which is generated from the compilation artifact.
-  // Make sure contract is compiled and artifacts are generated
-  const artifactsPath = `browser/contracts/artifacts/${contractName}.json` // Change this for different path
+/**
+ * Deploys a contract to the blockchain.
+ * @param contractName - The name of the contract to deploy.
+ * @param args - The arguments to pass to the contract constructor.
+ * @param accountIndex - The index of the account to use for deployment.
+ * @returns The deployed contract address.
+ */
+export const deploy = async (contractName: string, args: any[], accountIndex: number = 0) => {
+  console.log(`Deploying ${contractName}...`);
 
-  const metadata = JSON.parse(await remix.call('fileManager', 'getFile', artifactsPath))
-  // 'web3Provider' is a remix global variable object
+  try {
+    const metadata = await getContractMetadata(contractName);
+    const provider = new ethers.providers.Web3Provider(web3Provider);
+    const signer = provider.getSigner(accountIndex);
+    
+    // Create a ContractFactory
+    const factory = new ethers.ContractFactory(metadata.abi, metadata.data.bytecode.object, signer);
 
-  const signer = (new ethers.providers.Web3Provider(web3Provider)).getSigner(accountIndex)
+    // Deploy the contract
+    const contract = await factory.deploy(...args);
+    // Wait for the contract to be mined
+    await contract.deployed();
 
-  const factory = new ethers.ContractFactory(metadata.abi, metadata.data.bytecode.object, signer)
-
-  const contract = await factory.deploy(...args)
-
-  // The contract is NOT deployed yet; we must wait until it is mined
-  await contract.deployed()
-  return contract
-}
+    // Return the deployed contract address
+    console.log(`Contract deployed at address: ${contract.address}`);
+    return contract.address;
+  } catch (error) {
+    console.error(`Failed to deploy ${contractName}:`, error);
+    throw new Error(`Deployment Error: ${error.message}`);
+  }
+};
